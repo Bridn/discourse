@@ -1,4 +1,3 @@
-require_dependency 'sass/discourse_stylesheets'
 require_dependency 'distributed_cache'
 
 class ColorScheme < ActiveRecord::Base

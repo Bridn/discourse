@@ -29,7 +29,6 @@ Discourse::Application.configure do
   config.active_record.migration_error = :page_load
   config.watchable_dirs['lib'] = [:rb]
 
-  config.sass.debug_info = false
   config.handlebars.precompile = false
 
   # we recommend you use mailcatcher https://github.com/sj26/mailcatcher
@@ -45,6 +44,8 @@ Discourse::Application.configure do
   config.middleware.insert 0, Middleware::TurboDev
   require 'middleware/missing_avatars'
   config.middleware.insert 1, Middleware::MissingAvatars
+  require 'middleware/stylesheets'
+  config.middleware.insert 2, Middleware::Stylesheets
 
   config.enable_anon_caching = false
   require 'rbtrace'

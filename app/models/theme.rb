@@ -1,13 +1,41 @@
-require_dependency 'sass/discourse_sass_compiler'
-require_dependency 'sass/discourse_stylesheets'
 require_dependency 'distributed_cache'
+require_dependency 'stylesheet/compiler'
 
-class SiteCustomization < ActiveRecord::Base
+class Theme < ActiveRecord::Base
+
+  def child_themes
+    return @child_themes if @child_themes
+    @child_themes = []
+    return [] unless id
+
+    uniq = Set.new
+
+    iterations = 0
+    added = [id]
+    while added.length > 0 && iterations < 5
+      themes = Theme.where('id in (SELECT child_theme_id
+                                  FROM child_themes
+                                  WHERE parent_theme_id in (?))', added).to_a
+
+      added = []
+      themes.each do |theme|
+        next if uniq.include? theme.id
+        next if theme.id == id
+        added << theme.id
+        @child_themes << theme
+      end
+
+      iterations += 1
+    end
+
+    @child_themes
+  end
+
   ENABLED_KEY = '7e202ef2-56d7-47d5-98d8-a9c8d15e57dd'
 
-  COMPILER_VERSION = 4
+  COMPILER_VERSION = 5
 
-  @cache = DistributedCache.new('site_customization')
+  @cache = DistributedCache.new('theme')
 
   def self.css_fields
     %w(stylesheet mobile_stylesheet embedded_css)
@@ -18,16 +46,15 @@ class SiteCustomization < ActiveRecord::Base
   end
 
   before_create do
-    self.enabled ||= false
     self.key ||= SecureRandom.uuid
     true
   end
 
   def compile_stylesheet(scss)
-    DiscourseSassCompiler.compile("@import \"theme_variables\";\n" << scss, 'custom')
-  rescue => e
-    puts e.backtrace.join("\n") unless Sass::SyntaxError === e
-    raise e
+    return "" if scss.blank?
+
+    stylesheet, _ = Stylesheet::Compiler.compile("@import \"theme_variables\";\n" << scss, "theme_#{name.parameterize}.scss")
+    stylesheet
   end
 
   def transpile(es6_source, version)
@@ -82,26 +109,37 @@ COMPILED
     doc.to_s
   end
 
+
+  attr_accessor :force_rebake
+
   before_save do
-    SiteCustomization.html_fields.each do |html_attr|
-      if self.send("#{html_attr}_changed?")
-        self.send("#{html_attr}_baked=", process_html(self.send(html_attr)))
+    Theme.html_fields.each do |html_attr|
+      if force_rebake || self.send("#{html_attr}_changed?")
+        self.send("#{html_attr}_baked=", process_html(resolve_attr(html_attr)))
       end
     end
 
-    SiteCustomization.css_fields.each do |stylesheet_attr|
-      if self.send("#{stylesheet_attr}_changed?")
+    Theme.css_fields.each do |stylesheet_attr|
+      if force_rebake || self.send("#{stylesheet_attr}_changed?")
         begin
-          self.send("#{stylesheet_attr}_baked=", compile_stylesheet(self.send(stylesheet_attr)))
-        rescue Sass::SyntaxError => e
-          self.send("#{stylesheet_attr}_baked=", DiscourseSassCompiler.error_as_css(e, "custom stylesheet"))
+          self.send("#{stylesheet_attr}_baked=", compile_stylesheet(resolve_attr(stylesheet_attr)))
+        rescue SassC::SyntaxError => e
+          self.send("#{stylesheet_attr}_baked=", Stylesheet::Compiler.error_as_css(e, "custom stylesheet"))
         end
       end
     end
   end
 
+  def resolve_attr(attribute)
+    resolved = [send(attribute)]
+    child_themes.each do |theme|
+      resolved << theme.send(attribute)
+    end
+    resolved.map!{|x| x.blank? ? nil : x}.compact.join("\n")
+  end
+
   def any_stylesheet_changed?
-    SiteCustomization.css_fields.each do |fieldname|
+    Theme.css_fields.each do |fieldname|
       return true if self.send("#{fieldname}_changed?")
     end
     false
@@ -111,11 +149,10 @@ COMPILED
     remove_from_cache!
     if any_stylesheet_changed?
       MessageBus.publish "/file-change/#{key}", SecureRandom.hex
-      MessageBus.publish "/file-change/#{SiteCustomization::ENABLED_KEY}", SecureRandom.hex
+      MessageBus.publish "/file-change/#{Theme::ENABLED_KEY}", SecureRandom.hex
     end
     MessageBus.publish "/header-change/#{key}", header if header_changed?
     MessageBus.publish "/footer-change/#{key}", footer if footer_changed?
-    DiscourseStylesheets.cache.clear
   end
 
   after_destroy do
@@ -182,11 +219,7 @@ COMPILED
     lookup = @cache[cache_key]
     return lookup.html_safe if lookup
 
-    styles = if key == ENABLED_KEY
-      order(:name).where(enabled:true).to_a
-    else
-      [find_by(key: key)].compact
-    end
+    styles = [find_by(key: key)].compact
 
     val = if styles.present?
       styles.map do |style|
@@ -217,7 +250,7 @@ COMPILED
     # If the version number changes, clear out all the baked fields
     if compiler_version != COMPILER_VERSION
       updates = { compiler_version: COMPILER_VERSION }
-      SiteCustomization.html_fields.each do |f|
+      Theme.html_fields.each do |f|
         updates["#{f}_baked".to_sym] = nil
       end
 
@@ -226,7 +259,7 @@ COMPILED
 
     baked = send("#{field}_baked")
     if baked.blank?
-      if val = self.send(field)
+      if val = resolve_attr(field)
         val = process_html(val) rescue ""
         self.update_columns("#{field}_baked" => val)
       end
@@ -238,13 +271,23 @@ COMPILED
     self.class.remove_from_cache!(key)
   end
 
+  def add_child_theme!(theme)
+    ChildTheme.create!(parent_theme_id: id, child_theme_id: theme.id)
+    @child_themes = nil
+    self.force_rebake = true
+    save!
+    self.force_rebake = false
+    remove_from_cache!
+    Theme.clear_cache!
+  end
+
   def mobile_stylesheet_link_tag
     stylesheet_link_tag(:mobile)
   end
 
   def stylesheet_link_tag(target=:desktop)
-    content = self.send(SiteCustomization.field_for_target(target))
-    SiteCustomization.stylesheet_link_tag(key, target, content)
+    content = self.send(Theme.field_for_target(target))
+    Theme.stylesheet_link_tag(key, target, content)
   end
 
   def self.stylesheet_link_tag(key, target, content)
