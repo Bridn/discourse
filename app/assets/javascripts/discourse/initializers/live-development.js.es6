@@ -1,5 +1,35 @@
 import DiscourseURL from 'discourse/lib/url';
 
+function refreshCSS(node, hash) {
+  let $orig = $(node);
+
+  if ($orig.data('reloading')) {
+    return;
+  }
+
+  if (!$orig.data('orig')) {
+    $orig.data('orig', node.href);
+  }
+
+  $orig.data('reloading', true);
+
+  const orig = $(node).data('orig');
+
+  if (!hash) {
+    window.__uniq = window.__uniq || 1;
+    hash = window.__uniq++;
+  }
+
+  let reloaded = $orig.clone(true);
+  reloaded[0].href = orig + (orig.indexOf('?') >= 0 ? "&hash=" : "?hash=") + hash;
+  $orig.after(reloaded);
+
+  setTimeout(()=>{
+    $orig.remove();
+    reloaded.data('reloading', false);
+  }, 2000);
+}
+
 //  Use the message bus for live reloading of components for faster development.
 export default {
   name: "live-development",
@@ -48,17 +78,8 @@ export default {
           document.location.reload(true);
         } else {
           $('link').each(function() {
-            // TODO: stop bundling css in DEV please
-            if (true || (this.href.match(me.name) && me.hash)) {
-              if (!$(this).data('orig')) {
-                $(this).data('orig', this.href);
-              }
-              const orig = $(this).data('orig');
-              if (!me.hash) {
-                window.__uniq = window.__uniq || 1;
-                me.hash = window.__uniq++;
-              }
-              this.href = orig + (orig.indexOf('?') >= 0 ? "&hash=" : "?hash=") + me.hash;
+            if (this.href.match(me.name) && me.hash) {
+              refreshCSS(this, me.hash);
             }
           });
         }
