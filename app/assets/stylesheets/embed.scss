@@ -1,6 +1,5 @@
-//= require ./vendor/normalize
-//= require ./common/foundation/base
-
+@import "./vendor/normalize";
+@import "./common/foundation/base";
 @import "./common/foundation/variables";
 @import "./common/foundation/colors";
 @import "./common/foundation/mixins";
