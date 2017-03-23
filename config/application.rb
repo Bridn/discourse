@@ -170,6 +170,8 @@ module Discourse
       config.relative_url_root = GlobalSetting.relative_url_root
     end
 
+    require_dependency 'sass/discourse_stylesheets'
+
     config.after_initialize do
       # require common dependencies that are often required by plugins
       # in the past observers would load them as side-effects

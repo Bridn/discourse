@@ -11,14 +11,14 @@
         <%= DiscourseStylesheets.stylesheet_link_tag(mobile_view? ? :mobile : :desktop) %>
     <%- end %>
     <%- unless customization_disabled? %>
-      <%= raw SiteCustomization.custom_head_tag(session[:preview_style]) %>
+      <%= raw Theme.custom_head_tag(session[:preview_style]) %>
     <%- end %>
     <%= render_google_universal_analytics_code %>
     <%= yield :head %>
   </head>
   <body class="crawler">
     <%- unless customization_disabled? %>
-      <%= SiteCustomization.custom_header(session[:preview_style], mobile_view? ? :mobile : :desktop) %>
+      <%= Theme.custom_header(session[:preview_style], mobile_view? ? :mobile : :desktop) %>
     <%- end %>
     <header>
       <a href="<%= path "/" %>"><img src="<%=SiteSetting.logo_url%>" alt="<%=SiteSetting.title%>" id="site-logo" style="max-width: 150px;"></a>
@@ -38,7 +38,7 @@
     </footer>
     <%= render_google_analytics_code %>
     <%- unless customization_disabled? %>
-      <%= raw SiteCustomization.custom_body_tag(session[:preview_style]) %>
+      <%= raw Theme.custom_body_tag(session[:preview_style]) %>
     <%- end %>
   </body>
   <%= yield :after_body %>

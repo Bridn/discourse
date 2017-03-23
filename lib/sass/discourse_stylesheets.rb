@@ -1,5 +1,5 @@
-require_dependency 'sass/discourse_sass_compiler'
 require_dependency 'distributed_cache'
+require_dependency 'stylesheet/compiler'
 
 class DiscourseStylesheets
 
@@ -14,17 +14,17 @@ class DiscourseStylesheets
     @cache ||= DistributedCache.new("discourse_stylesheet")
   end
 
-  def self.stylesheet_link_tag(target = :desktop, media = 'all')
+  def self.stylesheet_link_tag(target = :desktop, media = 'all', theme_id = -1)
 
     tag = cache[target]
 
     return tag.dup.html_safe if tag
 
     @lock.synchronize do
-      builder = self.new(target)
+      builder = self.new(target, theme_id)
       builder.compile unless File.exists?(builder.stylesheet_fullpath)
       builder.ensure_digestless_file
-      tag = %[<link href="#{Rails.env.production? ? builder.stylesheet_cdnpath : builder.stylesheet_relpath_no_digest + '?body=1'}" media="#{media}" rel="stylesheet" />]
+      tag = %[<link href="#{Rails.env.production? ? builder.stylesheet_cdnpath : builder.stylesheet_relpath_no_digest}" media="#{media}" rel="stylesheet" />]
 
       cache[target] = tag
 
@@ -35,7 +35,7 @@ class DiscourseStylesheets
   def self.compile(target = :desktop, opts={})
     @lock.synchronize do
       FileUtils.rm(MANIFEST_FULL_PATH, force: true) if opts[:force]
-      builder = self.new(target)
+      builder = self.new(target, @theme_id)
       builder.compile(opts)
       builder.stylesheet_filename
     end
@@ -71,8 +71,9 @@ class DiscourseStylesheets
     end.compact.max.to_i
   end
 
-  def initialize(target = :desktop)
+  def initialize(target = :desktop, theme_id)
     @target = target
+    @theme_id = theme_id
   end
 
   def compile(opts={})
@@ -80,7 +81,8 @@ class DiscourseStylesheets
       if File.exists?(stylesheet_fullpath)
         unless StylesheetCache.where(target: @target, digest: digest).exists?
           begin
-            StylesheetCache.add(@target, digest, File.read(stylesheet_fullpath))
+            source_map = File.read(source_map_fullpath) rescue nil
+            StylesheetCache.add(@target, digest, File.read(stylesheet_fullpath), source_map)
           rescue => e
             Rails.logger.warn "Completely unexpected error adding contents of '#{stylesheet_fullpath}' to cache #{e}"
           end
@@ -89,21 +91,28 @@ class DiscourseStylesheets
       end
     end
 
-    scss = File.read("#{Rails.root}/app/assets/stylesheets/#{@target}.scss")
     rtl = @target.to_s =~ /_rtl$/
-    css = begin
-      DiscourseSassCompiler.compile(scss, @target, rtl: rtl)
-    rescue Sass::SyntaxError => e
-      Rails.logger.error "Stylesheet failed to compile for '#{@target}'! Recompiling without plugins and theming."
-      Rails.logger.error e.sass_backtrace_str("#{@target} stylesheet")
-      DiscourseSassCompiler.compile(scss + DiscourseSassCompiler.error_as_css(e, "#{@target} stylesheet"), @target, safe: true)
+    css,source_map = begin
+      Stylesheet::Compiler.compile_asset(@target, rtl: rtl, theme_id: @theme_id)
+    rescue SassC::SyntaxError => e
+      Rails.logger.error "Failed to compile #{@target} stylesheet: #{e.message}"
+      [Stylesheet::Compiler.error_as_css(e, "#{@target} stylesheet"), nil]
     end
+
     FileUtils.mkdir_p(cache_fullpath)
+
     File.open(stylesheet_fullpath, "w") do |f|
       f.puts css
     end
+
+    if source_map.present?
+      File.open(source_map_fullpath, "w") do |f|
+        f.puts source_map
+      end
+    end
+
     begin
-      StylesheetCache.add(@target, digest, css)
+      StylesheetCache.add(@target, digest, css, source_map)
     rescue => e
       Rails.logger.warn "Completely unexpected error adding item to cache #{e}"
     end
@@ -128,6 +137,11 @@ class DiscourseStylesheets
   def stylesheet_fullpath
     "#{cache_fullpath}/#{stylesheet_filename}"
   end
+
+  def source_map_fullpath
+    "#{cache_fullpath}/#{stylesheet_filename}.map"
+  end
+
   def stylesheet_fullpath_no_digest
     "#{cache_fullpath}/#{stylesheet_filename_no_digest}"
   end
@@ -159,7 +173,7 @@ class DiscourseStylesheets
   # digest encodes the things that trigger a recompile
   def digest
     @digest ||= begin
-      theme = (cs = ColorScheme.enabled) ? "#{cs.id}-#{cs.version}" : false
+      theme = (cs = Theme.find(@theme_id).color_scheme) ? "#{cs.id}-#{cs.version}" : false
       category_updated = Category.where("uploaded_background_id IS NOT NULL").last_updated_at
 
       if theme || category_updated > 0

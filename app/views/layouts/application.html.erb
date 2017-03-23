@@ -41,7 +41,7 @@
     <%- end %>
 
     <%- unless customization_disabled? %>
-      <%= raw SiteCustomization.custom_head_tag(session[:preview_style]) %>
+      <%= raw Theme.custom_head_tag(session[:preview_style]) %>
     <%- end %>
 
     <%= render_google_universal_analytics_code %>
@@ -82,7 +82,7 @@
     </noscript>
 
     <%- unless customization_disabled? || loading_admin? %>
-      <%= SiteCustomization.custom_header(session[:preview_style], mobile_view? ? :mobile : :desktop) %>
+      <%= Theme.custom_header(session[:preview_style], mobile_view? ? :mobile : :desktop) %>
     <%- end %>
 
     <section id='main'>
@@ -118,7 +118,7 @@
     <%= render_google_analytics_code %>
 
     <%- unless customization_disabled? %>
-      <%= raw SiteCustomization.custom_body_tag(session[:preview_style]) %>
+      <%= raw Theme.custom_body_tag(session[:preview_style]) %>
     <%- end %>
   </body>
 </html>

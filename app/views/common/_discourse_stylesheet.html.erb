@@ -9,5 +9,5 @@
 <%- end %>
 
 <%- unless customization_disabled? %>
-  <%= SiteCustomization.custom_stylesheet(session[:preview_style], mobile_view? ? :mobile : :desktop) %>
+  <%= DiscourseStylesheets.stylesheet_link_tag(mobile_view? ? :mobile_theme : :desktop_theme, -1) %>
 <%- end %>

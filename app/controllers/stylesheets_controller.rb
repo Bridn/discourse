@@ -1,7 +1,21 @@
 class StylesheetsController < ApplicationController
-  skip_before_filter :preload_json, :redirect_to_login_if_required, :check_xhr, :verify_authenticity_token, only: [:show]
+  skip_before_filter :preload_json, :redirect_to_login_if_required, :check_xhr, :verify_authenticity_token, only: [:show, :show_source_map]
+
+  def show_source_map
+    show_resource(source_map: true)
+  end
 
   def show
+    show_resource
+  end
+
+  protected
+
+  def show_resource(source_map: false)
+
+    extension = source_map ? ".css.map" : ".css"
+
+    params[:name]
 
     no_cookies
 
@@ -19,7 +33,7 @@ class StylesheetsController < ApplicationController
 
     # Security note, safe due to route constraint
     underscore_digest = digest ? "_" + digest : ""
-    location = "#{Rails.root}/#{DiscourseStylesheets::CACHE_PATH}/#{target}#{underscore_digest}.css"
+    location = "#{Rails.root}/#{DiscourseStylesheets::CACHE_PATH}/#{target}#{underscore_digest}#{extension}"
 
     stylesheet_time = query.pluck(:created_at).first
 
@@ -33,8 +47,8 @@ class StylesheetsController < ApplicationController
 
 
     unless File.exist?(location)
-      if current = query.first
-        File.write(location, current.content)
+      if current = query.limit(1).pluck(source_map ? :source_map : :content).first
+        File.write(location, current)
       else
         raise Discourse::NotFound
       end
@@ -45,12 +59,14 @@ class StylesheetsController < ApplicationController
     send_file(location, disposition: :inline)
   end
 
-  protected
-
   def handle_missing_cache(location, name, digest)
+    location = location.sub(".css.map", ".css")
+    source_map_location = location + ".map"
+
     existing = File.read(location) rescue nil
     if existing && digest
-      StylesheetCache.add(name, digest, existing)
+      source_map = File.read(source_map_location) rescue nil
+      StylesheetCache.add(name, digest, existing, source_map)
     end
   end
 

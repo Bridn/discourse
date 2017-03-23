@@ -3,6 +3,8 @@ require_dependency 'stylesheet/compiler'
 
 class Theme < ActiveRecord::Base
 
+  belongs_to :color_scheme
+
   def child_themes
     return @child_themes if @child_themes
     @child_themes = []

@@ -383,6 +383,7 @@ Discourse::Application.routes.draw do
 
   get "highlight-js/:hostname/:version.js" => "highlight_js#show", format: false, constraints: { hostname: /[\w\.-]+/ }
 
+  get "stylesheets/:name.css.map" => "stylesheets#show_source_map", constraints: { name: /[a-z0-9_]+/ }
   get "stylesheets/:name.css" => "stylesheets#show", constraints: { name: /[a-z0-9_]+/ }
 
   post "uploads" => "uploads#create"

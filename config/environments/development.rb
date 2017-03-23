@@ -44,11 +44,16 @@ Discourse::Application.configure do
   config.middleware.insert 0, Middleware::TurboDev
   require 'middleware/missing_avatars'
   config.middleware.insert 1, Middleware::MissingAvatars
-  require 'middleware/stylesheets'
-  config.middleware.insert 2, Middleware::Stylesheets
 
   config.enable_anon_caching = false
   require 'rbtrace'
+
+
+  require 'stylesheet/watcher'
+  if defined? Puma
+    STDERR.puts "Staring CSS change watcher"
+    @watcher = Stylesheet::Watcher.watch
+  end
 
   if emails = GlobalSetting.developer_emails
     config.developer_emails = emails.split(",").map(&:downcase).map(&:strip)

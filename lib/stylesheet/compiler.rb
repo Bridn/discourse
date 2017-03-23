@@ -70,6 +70,19 @@ module Stylesheet
       Import.new("categoy_background.scss", source: contents)
     end
 
+    register_import "desktop_theme" do
+      if @theme_id
+        css = Theme.where(id: @theme_id).pluck(:stylesheet).first.to_s
+        if css.present?
+          Import.new("desktop_theme.css", css)
+        end
+      end
+    end
+
+    def initialize(options)
+      @theme_id = options[:theme_id]
+    end
+
 
     def imports(asset, parent_path)
       if asset[-1] == "*"
@@ -97,26 +110,42 @@ module Stylesheet
     end
 
     def self.compile_asset(asset, options={})
-      filename = "#{asset}.scss"
-      path = "#{load_path}/#{filename}"
-      file = File.read path
+
+      if Importer.special_imports[asset.to_s]
+        filename = "theme.scss"
+        file = "@import \"#{asset}\";"
+      else
+        filename = "#{asset}.scss"
+        path = "#{ASSET_ROOT}/#{filename}"
+        file = File.read path
+      end
+
       compile(file,filename,options)
+
     end
 
     def self.compile(stylesheet, filename, options={})
 
-      load_path = ASSET_ROOT
       engine = SassC::Engine.new(stylesheet,
                                  importer: Importer,
                                  filename: filename,
                                  style: :compressed,
                                  source_map_file: "#{filename.sub(".scss","")}.css.map",
                                  source_map_contents: true,
-                                 load_paths: [load_path])
+                                 load_paths: [ASSET_ROOT])
 
 
       result = engine.render
-      [result, engine.source_map]
+
+      if options[:rtl]
+        require 'r2'
+        [R2.r2(result), nil]
+      else
+        source_map = engine.source_map
+        source_map.force_encoding("UTF-8")
+
+        [result, source_map]
+      end
     end
   end
 end
